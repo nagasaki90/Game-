@@ -1,155 +1,122 @@
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+// Scene
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
 
+// Camera and Renderer
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Lights
+const light = new THREE.PointLight(0xffffff, 1, 50);
+light.position.set(0, 3, 0);
+scene.add(light);
+
+const ambient = new THREE.AmbientLight(0x404040);
+scene.add(ambient);
+
+// Controls (WASD + Mouse)
+const controls = new THREE.PointerLockControls(camera, document.body);
+document.addEventListener("click", () => controls.lock());
+scene.add(controls.getObject());
+
+const velocity = new THREE.Vector3();
+const direction = new THREE.Vector3();
 const keys = {};
-let lantern = false;
+
+document.addEventListener("keydown", (e) => keys[e.code] = true);
+document.addEventListener("keyup", (e) => keys[e.code] = false);
+
+// Floor
+const floorGeometry = new THREE.PlaneGeometry(100, 100);
+const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// Walls (a simple room)
+function createWall(x, z, w, h, d) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, h / 2, z);
+  scene.add(mesh);
+}
+
+createWall(0, -10, 20, 4, 1);
+createWall(0, 10, 20, 4, 1);
+createWall(-10, 0, 1, 4, 20);
+createWall(10, 0, 1, 4, 20);
+
+// Kamla (enemy cube)
+const kamla = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 2, 1),
+  new THREE.MeshStandardMaterial({ color: 0xaa0000 })
+);
+kamla.position.set(5, 1, 5);
+scene.add(kamla);
+
+// Key
+const key = new THREE.Mesh(
+  new THREE.BoxGeometry(0.5, 0.2, 0.2),
+  new THREE.MeshStandardMaterial({ color: 0xffff00 })
+);
+key.position.set(-5, 0.2, -5);
+scene.add(key);
+
 let hasKey = false;
-let diaryRead = false;
-let hiding = false;
-let lanternTimer = 0;
-let jumpscareTimer = 0;
-let gameMsg = "";
 
-let player = { x: 50, y: 300, w: 20, h: 20, speed: 2 };
-let granny = { x: 700, y: 100, speed: 1.2 };
+// Door (escape)
+const door = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 3, 0.2),
+  new THREE.MeshStandardMaterial({ color: 0x00ff00 })
+);
+door.position.set(-10, 1.5, 0);
+scene.add(door);
 
-// Items and interactables
-const keyItem = { x: 700, y: 500, w: 20, h: 20 };
-const lanternItem = { x: 100, y: 100, w: 20, h: 20 };
-const diaryItem = { x: 400, y: 200, w: 20, h: 20 };
-const bed = { x: 350, y: 400, w: 100, h: 20 };
-const escapeDoor = { x: 770, y: 280, w: 20, h: 80 };
+// Game Loop
+function animate() {
+  requestAnimationFrame(animate);
 
-// Controls
-document.addEventListener("keydown", (e) => (keys[e.key.toLowerCase()] = true));
-document.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
+  // Player movement
+  direction.z = Number(keys["KeyW"]) - Number(keys["KeyS"]);
+  direction.x = Number(keys["KeyD"]) - Number(keys["KeyA"]);
+  direction.normalize();
 
-function drawRect(obj, color) {
-  ctx.fillStyle = color;
-  ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
-}
+  velocity.x = direction.x * 0.1;
+  velocity.z = direction.z * 0.1;
 
-function collide(a, b) {
-  return (
-    a.x < b.x + b.w &&
-    a.x + a.w > b.x &&
-    a.y < b.y + b.h &&
-    a.y + a.h > b.y
-  );
-}
+  controls.moveRight(velocity.x);
+  controls.moveForward(velocity.z);
 
-function update() {
-  // Movement
-  if (!hiding) {
-    if (keys["w"]) player.y -= player.speed;
-    if (keys["s"]) player.y += player.speed;
-    if (keys["a"]) player.x -= player.speed;
-    if (keys["d"]) player.x += player.speed;
-  }
+  // Kamla follows player
+  const playerPos = controls.getObject().position;
+  const dx = playerPos.x - kamla.position.x;
+  const dz = playerPos.z - kamla.position.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
 
-  // Lantern timer
-  if (lantern) {
-    lanternTimer--;
-    if (lanternTimer <= 0) {
-      lantern = false;
-      gameMsg = "🕯 Lantern burned out!";
-    }
-  }
-
-  // Granny AI
-  if (!hiding) {
-    let dx = player.x - granny.x;
-    let dy = player.y - granny.y;
-    let dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > 0) {
-      granny.x += (dx / dist) * granny.speed;
-      granny.y += (dy / dist) * granny.speed;
-    }
-  }
-
-  // Item pickups
-  if (collide(player, keyItem)) {
-    hasKey = true;
-    keyItem.x = -1000;
-    gameMsg = "You picked up the key!";
-  }
-
-  if (collide(player, lanternItem)) {
-    lantern = true;
-    lanternTimer = 900; // 15 seconds at 60fps
-    lanternItem.x = -1000;
-    gameMsg = "Lantern acquired!";
-  }
-
-  if (collide(player, diaryItem) && !diaryRead) {
-    diaryRead = true;
-    gameMsg = `"Kamla’s Note: She watches from the dark..."`;
-  }
-
-  // Hide under bed
-  if (keys["h"] && collide(player, bed)) {
-    hiding = !hiding;
-    gameMsg = hiding ? "You are hiding..." : "You stepped out.";
-  }
-
-  // Escape
-  if (hasKey && collide(player, escapeDoor)) {
-    alert("🏃 You escaped Kamla’s house!");
-    window.location.reload();
-  }
-
-  // Granny catches you
-  if (!hiding && collide(player, granny)) {
+  if (dist > 0.5) {
+    kamla.position.x += (dx / dist) * 0.02;
+    kamla.position.z += (dz / dist) * 0.02;
+  } else {
     alert("💀 Kamla caught you!");
     window.location.reload();
   }
 
-  // Random jumpscare
-  if (!lantern && Math.random() < 0.004) {
-    jumpscareTimer = 20;
-    gameMsg = "👁 Kamla is near...";
-  }
-}
-
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Darkness effect
-  if (!lantern) {
-    ctx.fillStyle = "rgba(0,0,0,0.85)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Key pickup
+  if (!hasKey && key.position.distanceTo(playerPos) < 1) {
+    hasKey = true;
+    scene.remove(key);
+    document.getElementById("info").innerText = "You picked up a key!";
   }
 
-  // Player and NPCs
-  drawRect(player, "white");
-  drawRect(granny, "red");
-
-  // Items
-  drawRect(keyItem, "gold");
-  drawRect(lanternItem, "orange");
-  drawRect(diaryItem, "purple");
-
-  // Bed and Door
-  drawRect(bed, "gray");
-  drawRect(escapeDoor, "green");
-
-  // Message
-  ctx.fillStyle = "white";
-  ctx.font = "16px monospace";
-  ctx.fillText(gameMsg, 10, 20);
-
-  // Jumpscare flash
-  if (jumpscareTimer > 0) {
-    ctx.fillStyle = "rgba(255,0,0,0.4)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    jumpscareTimer--;
+  // Door escape
+  if (hasKey && door.position.distanceTo(playerPos) < 1.5) {
+    alert("🏃 You escaped Kamla's house!");
+    window.location.reload();
   }
-}
 
-function gameLoop() {
-  update();
-  draw();
-  requestAnimationFrame(gameLoop);
+  renderer.render(scene, camera);
 }
-
-gameLoop();
+animate();
