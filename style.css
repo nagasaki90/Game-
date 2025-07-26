@@ -1,13 +1,16 @@
 body {
   margin: 0;
-  background: black;
   overflow: hidden;
+  background: black;
+  color: white;
+  font-family: monospace;
 }
 
-canvas {
-  display: block;
-  margin: auto;
-  background-color: #000;
-  image-rendering: pixelated;
-  border: 3px solid #222;
+#info {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 10px;
+  z-index: 1;
 }
